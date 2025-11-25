@@ -9,3 +9,6 @@ build
 packages/server/.env
 packages/ui/.env
 .atl/
+
+**/supabase
+**/.flowise
