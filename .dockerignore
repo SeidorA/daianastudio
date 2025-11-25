@@ -8,3 +8,6 @@ build
 
 packages/server/.env
 packages/ui/.env
+
+**/supabase
+**/.flowise
