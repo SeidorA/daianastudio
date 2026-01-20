@@ -154,6 +154,7 @@ export class IdentityManager {
         } catch (error) {
             this.licenseValid = false
         }
+        this.currentInstancePlatform = Platform.ENTERPRISE
     }
 
     public initializeSSO = async (app: express.Application) => {
