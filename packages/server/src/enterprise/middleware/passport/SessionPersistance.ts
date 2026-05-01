@@ -1,6 +1,6 @@
 import Redis from 'ioredis'
 import { RedisStore } from 'connect-redis'
-import { getDatabaseSSLFromEnv } from '../../../DataSource'
+import { getDatabaseSSLFromEnv, getPostgresSearchPathOptionFromEnv } from '../../../DataSource'
 import path from 'path'
 import { getUserHome } from '../../../utils'
 import type { Store } from 'express-session'
@@ -75,12 +75,12 @@ export const initializeDBClientAndStore: any = () => {
                 user: process.env.DATABASE_USER,
                 password: process.env.DATABASE_PASSWORD,
                 database: process.env.DATABASE_NAME,
-                ssl: getDatabaseSSLFromEnv()
+                ssl: getDatabaseSSLFromEnv(),
+                options: getPostgresSearchPathOptionFromEnv()
             })
             dbStore = new pgSession({
                 pool: pgPool, // Connection pool
                 tableName: 'login_sessions',
-                schemaName: 'public',
                 createTableIfMissing: true
             })
             return dbStore
