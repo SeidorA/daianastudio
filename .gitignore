@@ -119,3 +119,8 @@ apps/*/
 .claude/plans/
 .claude/settings.local.json
 .claude/agent-memory/*
+
+## Supabase CLI Folder
+**/supabase
+**/.flowise
+/docker-compose.yml
