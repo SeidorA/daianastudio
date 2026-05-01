@@ -76,7 +76,8 @@ export const init = async (): Promise<void> => {
                 entities: Object.values(entities),
                 migrations: postgresMigrations,
                 extra: {
-                    idleTimeoutMillis: 120000
+                    idleTimeoutMillis: 120000,
+                    options: getPostgresSearchPathOptionFromEnv()
                 },
                 logging: ['error', 'warn', 'info', 'log'],
                 logger: 'advanced-console',
@@ -118,4 +119,9 @@ export const getDatabaseSSLFromEnv = () => {
         return true
     }
     return undefined
+}
+
+export const getPostgresSearchPathOptionFromEnv = () => {
+    const databaseSchema = process.env.DATABASE_SCHEMA
+    return databaseSchema ? `-c search_path=${databaseSchema},public` : undefined
 }
