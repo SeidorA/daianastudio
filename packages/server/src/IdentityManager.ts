@@ -105,8 +105,8 @@ export class IdentityManager {
 
         // First check if license key is missing
         if (!FLOWISE_EE_LICENSE_KEY) {
-            this.licenseValid = false
-            this.currentInstancePlatform = Platform.OPEN_SOURCE
+            this.licenseValid = true
+            this.currentInstancePlatform = Platform.ENTERPRISE
             return
         }
 

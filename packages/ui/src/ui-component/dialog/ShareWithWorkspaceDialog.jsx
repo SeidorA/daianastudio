@@ -1,12 +1,11 @@
 import { createPortal } from 'react-dom'
 import PropTypes from 'prop-types'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { enqueueSnackbar as enqueueSnackbarAction, closeSnackbar as closeSnackbarAction } from '@/store/actions'
-import { cloneDeep } from 'lodash'
 
 // Material
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Box, Stack, OutlinedInput, Typography } from '@mui/material'
+import { Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Box, Stack, OutlinedInput, Typography } from '@mui/material'
 
 // Project imports
 import { StyledButton } from '@/ui-component/button/StyledButton'
@@ -45,28 +44,35 @@ const ShareWithWorkspaceDialog = ({ show, dialogProps, onCancel, setError }) => 
     const user = useSelector((state) => state.auth.user)
 
     const [outputSchema, setOutputSchema] = useState([])
+    const outputSchemaRef = useRef([])
 
     const [name, setName] = useState('')
 
-    const onRowUpdate = (newRow) => {
-        setTimeout(() => {
-            setOutputSchema((prevRows) => {
-                let allRows = [...cloneDeep(prevRows)]
-                const indexToUpdate = allRows.findIndex((row) => row.id === newRow.id)
-                if (indexToUpdate >= 0) {
-                    allRows[indexToUpdate] = { ...newRow }
-                }
-                return allRows
-            })
-        })
-    }
+    const toggleWorkspaceShare = useCallback((workspaceId, shared) => {
+        const nextRows = outputSchemaRef.current.map((row) => (row.id === workspaceId ? { ...row, shared } : row))
+        outputSchemaRef.current = nextRows
+        setOutputSchema(nextRows)
+    }, [])
 
     const columns = useMemo(
         () => [
             { field: 'workspaceName', headerName: 'Workspace', editable: false, flex: 1 },
-            { field: 'shared', headerName: 'Share', type: 'boolean', editable: true, width: 180 }
+            {
+                field: 'shared',
+                headerName: 'Share',
+                editable: false,
+                width: 180,
+                sortable: false,
+                filterable: false,
+                renderCell: (params) => (
+                    <Checkbox
+                        checked={Boolean(params.row.shared)}
+                        onChange={(event) => toggleWorkspaceShare(params.row.id, event.target.checked)}
+                    />
+                )
+            }
         ],
-        []
+        [toggleWorkspaceShare]
     )
 
     useEffect(() => {
@@ -84,6 +90,7 @@ const ShareWithWorkspaceDialog = ({ show, dialogProps, onCancel, setError }) => 
                         shared: isShared
                     })
                 })
+            outputSchemaRef.current = workspaces
             setOutputSchema(workspaces)
         }
     }, [getWorkspacesByOrganizationIdUserIdApi.data, getSharedWorkspacesForItemApi.data, user.activeWorkspaceId])
@@ -101,6 +108,8 @@ const ShareWithWorkspaceDialog = ({ show, dialogProps, onCancel, setError }) => 
     }, [getWorkspacesByOrganizationIdUserIdApi.error, setError])
 
     useEffect(() => {
+        outputSchemaRef.current = []
+        setOutputSchema([])
         if (user) {
             getWorkspacesByOrganizationIdUserIdApi.request(user.activeOrganizationId, user.id)
         }
@@ -122,7 +131,7 @@ const ShareWithWorkspaceDialog = ({ show, dialogProps, onCancel, setError }) => 
                 itemType: dialogProps.data.itemType,
                 workspaceIds: []
             }
-            outputSchema.map((row) => {
+            outputSchemaRef.current.forEach((row) => {
                 if (row.shared) {
                     obj.workspaceIds.push(row.id)
                 }
@@ -187,7 +196,7 @@ const ShareWithWorkspaceDialog = ({ show, dialogProps, onCancel, setError }) => 
                     <OutlinedInput id='name' type='string' disabled={true} fullWidth placeholder={name} value={name} name='name' />
                 </Box>
                 <Box sx={{ p: 2 }}>
-                    <Grid columns={columns} rows={outputSchema} onRowUpdate={onRowUpdate} />
+                    <Grid columns={columns} rows={outputSchema} />
                 </Box>
             </DialogContent>
             <DialogActions>
