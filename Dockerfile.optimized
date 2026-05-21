@@ -1,0 +1,52 @@
+# Optimized multi-stage Dockerfile proposal
+# Build with:
+#   docker build -f Dockerfile.optimized -t flowise-optimized .
+
+FROM node:20-alpine AS builder
+
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    build-base \
+    libc6-compat \
+    cairo-dev \
+    pango-dev \
+    chromium \
+    curl \
+    git && \
+    npm install -g pnpm
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV NODE_OPTIONS=--max-old-space-size=8192
+
+WORKDIR /usr/src/flowise
+
+COPY . .
+
+RUN pnpm install && \
+    pnpm build:docker && \
+    CI=true pnpm prune --prod --ignore-scripts
+
+FROM node:20-alpine AS runtime
+
+RUN apk add --no-cache \
+    libc6-compat \
+    chromium \
+    curl
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV NODE_ENV=production
+
+WORKDIR /usr/src/flowise
+
+COPY --from=builder /usr/src/flowise/node_modules ./node_modules
+COPY --from=builder /usr/src/flowise/packages ./packages
+
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "packages/server/bin/run", "start"]

@@ -106,6 +106,7 @@ export const availableDependencies = [
     'lunary',
     'mammoth',
     'mongodb',
+    'mssql',
     'mysql2',
     'node-html-markdown',
     'notion-to-md',
