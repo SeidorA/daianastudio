@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer'
 import fs from 'node:fs'
 import path from 'path'
 import { Platform } from '../../Interface'
+import { getSecureAppUrl } from './url.util'
 
 const SMTP_HOST = process.env.SMTP_HOST
 const SMTP_PORT = parseInt(process.env.SMTP_PORT as string, 10)
@@ -51,7 +52,12 @@ const sendWorkspaceAdd = async (email: string, workspaceName: string, dashboardL
 
     const template = getEmailTemplate('workspace_add_cloud.hbs', process.env.WORKSPACE_INVITE_TEMPLATE_PATH)
     const compiledWorkspaceInviteTemplateSource = handlebars.compile(template)
-    htmlToSend = compiledWorkspaceInviteTemplateSource({ workspaceName, dashboardLink })
+    htmlToSend = compiledWorkspaceInviteTemplateSource({
+        workspaceName,
+        dashboardLink,
+        logoUrl: getSecureAppUrl('/logo192.png'),
+        brandName: 'Daiana'
+    })
     textContent = `You have been added to ${workspaceName}. Click here to visit your dashboard: ${dashboardLink}` // plain text body
 
     await transporter.sendMail({
@@ -84,7 +90,12 @@ const sendWorkspaceInvite = async (
                   process.env.WORKSPACE_INVITE_TEMPLATE_PATH
               )
     const compiledWorkspaceInviteTemplateSource = handlebars.compile(template)
-    htmlToSend = compiledWorkspaceInviteTemplateSource({ workspaceName, registerLink })
+    htmlToSend = compiledWorkspaceInviteTemplateSource({
+        workspaceName,
+        registerLink,
+        logoUrl: getSecureAppUrl('/logo192.png'),
+        brandName: 'Daiana'
+    })
     textContent = `You have been invited to ${workspaceName}. Click here to register: ${registerLink}` // plain text body
 
     await transporter.sendMail({
@@ -100,7 +111,11 @@ const sendPasswordResetEmail = async (email: string, resetLink: string) => {
     const passwordResetTemplateSource = fs.readFileSync(path.join(__dirname, '../', 'emails', 'workspace_user_reset_password.hbs'), 'utf8')
     const compiledPasswordResetTemplateSource = handlebars.compile(passwordResetTemplateSource)
 
-    const htmlToSend = compiledPasswordResetTemplateSource({ resetLink })
+    const htmlToSend = compiledPasswordResetTemplateSource({
+        resetLink,
+        logoUrl: getSecureAppUrl('/logo192.png'),
+        brandName: 'Daiana'
+    })
     await transporter.sendMail({
         from: SENDER_EMAIL || '"FlowiseAI Team" <team@mail.flowiseai.com>', // sender address
         to: email,
@@ -113,7 +128,12 @@ const sendPasswordResetEmail = async (email: string, resetLink: string) => {
 const sendEmailChangeConfirmationEmail = async (email: string, confirmLink: string, newEmail: string) => {
     const template = getEmailTemplate('confirm_email_change.hbs')
     const compiled = handlebars.compile(template)
-    const htmlToSend = compiled({ confirmLink, newEmail })
+    const htmlToSend = compiled({
+        confirmLink,
+        newEmail,
+        logoUrl: getSecureAppUrl('/logo192.png'),
+        brandName: 'Daiana'
+    })
     const textContent = `Confirm your email change to ${newEmail}: ${confirmLink}`
 
     await transporter.sendMail({
@@ -131,7 +151,11 @@ const sendVerificationEmailForCloud = async (email: string, verificationLink: st
 
     const template = getEmailTemplate('verify_email_cloud.hbs')
     const compiledWorkspaceInviteTemplateSource = handlebars.compile(template)
-    htmlToSend = compiledWorkspaceInviteTemplateSource({ verificationLink })
+    htmlToSend = compiledWorkspaceInviteTemplateSource({
+        verificationLink,
+        logoUrl: getSecureAppUrl('/logo192.png'),
+        brandName: 'Daiana'
+    })
     textContent = `To complete your registration, we need to verify your email address. Click here to verify your email address: ${verificationLink}` // plain text body
 
     await transporter.sendMail({
