@@ -120,3 +120,4 @@ apps/*/
 .claude/settings.local.json
 .claude/agent-memory/*
 .atl/
+docker/.flowise_data/
