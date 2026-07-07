@@ -120,6 +120,9 @@ apps/*/
 .claude/settings.local.json
 .claude/agent-memory/*
 
+# Agent tooling
+.atl/
+
 ## Supabase CLI Folder
 **/supabase
 **/.flowise
