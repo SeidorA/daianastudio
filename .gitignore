@@ -120,6 +120,7 @@ apps/*/
 .claude/settings.local.json
 .claude/agent-memory/*
 .atl/
+.codegraph/
 docker/.flowise_data/
 
 ## Supabase CLI Folder
