@@ -1,6 +1,7 @@
 module.exports = {
     roots: ['<rootDir>/src'],
     testEnvironment: 'node',
+    setupFilesAfterEnv: ['<rootDir>/../../tools/jest/forbid-focused-tests.js'],
     testMatch: ['<rootDir>/src/**/*.test.js'],
     testPathIgnorePatterns: ['/node_modules/', '/build/'],
     moduleNameMapper: {

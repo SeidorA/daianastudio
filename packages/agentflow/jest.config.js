@@ -1,3 +1,5 @@
+const forbidFocusedTests = '<rootDir>/../../tools/jest/forbid-focused-tests.js'
+
 // Shared config inherited by both project types
 const baseConfig = {
     preset: 'ts-jest',
@@ -10,6 +12,7 @@ const baseConfig = {
             }
         ]
     },
+    setupFilesAfterEnv: [forbidFocusedTests],
     testPathIgnorePatterns: ['/node_modules/', '/dist/'],
     moduleNameMapper: {
         '\\.(css|less|scss|sass)$': '<rootDir>/src/__mocks__/styleMock.js',
@@ -80,7 +83,7 @@ module.exports = {
                 customExportConditions: ['']
             },
             testMatch: ['<rootDir>/src/**/*.test.tsx'],
-            setupFilesAfterEnv: ['@testing-library/jest-dom']
+            setupFilesAfterEnv: [forbidFocusedTests, '@testing-library/jest-dom']
         }
     ]
 }

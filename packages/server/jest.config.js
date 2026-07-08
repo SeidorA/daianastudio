@@ -32,5 +32,8 @@ module.exports = {
     modulePaths: ['<rootDir>/node_modules'],
 
     // Display individual test results with the test suite hierarchy.
-    verbose: true
+    verbose: true,
+
+    // Fail fast if a focused Jest test is committed.
+    setupFilesAfterEnv: ['<rootDir>/../../tools/jest/forbid-focused-tests.js']
 }

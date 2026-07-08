@@ -8,6 +8,7 @@ module.exports = {
     testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.tsx?$',
     moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
     verbose: true,
+    setupFilesAfterEnv: ['<rootDir>/../../tools/jest/forbid-focused-tests.js'],
     testPathIgnorePatterns: ['/node_modules/', '/dist/'],
     moduleNameMapper: {
         '^../../../src/(.*)$': '<rootDir>/src/$1',
