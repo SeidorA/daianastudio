@@ -27648,7 +27648,7 @@ snapshots:
       flat: 5.0.2
       ibm-cloud-sdk-core: 5.4.8
       js-yaml: 4.1.1
-      langchain: 0.3.6(9eaee96a26b1bbe7041da2589799f0f4)
+      langchain: 0.3.6(cb1e939a1129502725838912c8fc38d7)
       langsmith: 0.3.34(openai@6.19.0(ws@8.18.3(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.3.6))
       openai: 6.19.0(ws@8.18.3(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.3.6)
       uuid: 10.0.0
