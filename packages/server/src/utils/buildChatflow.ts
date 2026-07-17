@@ -72,6 +72,7 @@ import { OMIT_QUEUE_JOB_DATA } from './constants'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
 import { Organization } from '../enterprise/database/entities/organization.entity'
+import { runWithSharedMessageQuota, SharedMessageQuotaError } from './sharedMessageQuota'
 
 const shouldAutoPlayTTS = (textToSpeechConfig: string | undefined | null): boolean => {
     if (!textToSpeechConfig) return false
@@ -1081,42 +1082,47 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             productId
         }
 
-        if (process.env.MODE === MODE.QUEUE) {
-            const predictionQueue = appServer.queueManager.getQueue('prediction')
-            const job = await predictionQueue.addJob(omit(executeData, OMIT_QUEUE_JOB_DATA))
-            logger.debug(`[server]: [${orgId}/${chatflow.id}/${chatId}]: Job added to queue: ${job.id}`)
+        return await runWithSharedMessageQuota(
+            {
+                chatflow,
+                organizationId: orgId,
+                workspaceId,
+                isInternal,
+                isEvaluation,
+                isTool,
+                chatType,
+                requestId: incomingInput.requestId
+            },
+            async () => {
+                let result
+                if (process.env.MODE === MODE.QUEUE) {
+                    const predictionQueue = appServer.queueManager.getQueue('prediction')
+                    const job = await predictionQueue.addJob(omit(executeData, OMIT_QUEUE_JOB_DATA))
+                    logger.debug(`[server]: [${orgId}/${chatflow.id}/${chatId}]: Job added to queue: ${job.id}`)
 
-            const queueEvents = predictionQueue.getQueueEvents()
-            const result = await job.waitUntilFinished(queueEvents)
-            appServer.abortControllerPool.remove(abortControllerId)
-            if (!result) {
-                throw new Error('Job execution failed')
+                    const queueEvents = predictionQueue.getQueueEvents()
+                    result = await job.waitUntilFinished(queueEvents)
+                    if (!result) throw new Error('Job execution failed')
+                } else {
+                    const signal = new AbortController()
+                    appServer.abortControllerPool.add(abortControllerId, signal)
+                    executeData.signal = signal
+                    result = await executeFlow(executeData)
+                }
+
+                appServer.abortControllerPool.remove(abortControllerId)
+                await updatePredictionsUsage(orgId, subscriptionId, workspaceId, appServer.usageCacheManager)
+                incrementSuccessMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
+                return result
             }
-            await updatePredictionsUsage(orgId, subscriptionId, workspaceId, appServer.usageCacheManager)
-            incrementSuccessMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
-            return result
-        } else {
-            // Add abort controller to the pool
-            const signal = new AbortController()
-            appServer.abortControllerPool.add(abortControllerId, signal)
-            executeData.signal = signal
-
-            const result = await executeFlow(executeData)
-
-            appServer.abortControllerPool.remove(abortControllerId)
-            await updatePredictionsUsage(orgId, subscriptionId, workspaceId, appServer.usageCacheManager)
-            incrementSuccessMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
-            return result
-        }
+        )
     } catch (e) {
         logger.error(`[server]:${organizationId}/${chatflow.id}/${chatId} Error:`, e)
         appServer.abortControllerPool.remove(`${chatflow.id}_${chatId}`)
         incrementFailedMetricCounter(appServer.metricsProvider, isInternal, isAgentFlow)
-        if (e instanceof InternalFlowiseError && e.statusCode === StatusCodes.UNAUTHORIZED) {
+        if (e instanceof SharedMessageQuotaError || (e instanceof InternalFlowiseError && e.statusCode === StatusCodes.UNAUTHORIZED))
             throw e
-        } else {
-            throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, getErrorMessage(e))
-        }
+        throw new InternalFlowiseError(StatusCodes.INTERNAL_SERVER_ERROR, getErrorMessage(e))
     }
 }
 
