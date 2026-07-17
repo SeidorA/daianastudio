@@ -361,6 +361,7 @@ export interface IMessage {
 
 export interface IncomingInput {
     question: string
+    requestId?: string
     overrideConfig?: ICommonObject
     chatId?: string
     sessionId?: string

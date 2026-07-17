@@ -49,6 +49,11 @@ export abstract class BaseCommand extends Command {
         DATABASE_SSL_KEY_BASE64: Flags.string(),
         DATABASE_REJECT_UNAUTHORIZED: Flags.string(),
 
+        // Daiana shared chat quota
+        DAIANA_SHARED_CHAT_QUOTA_ENABLED: Flags.string(),
+        SUPABASE_BASE_URL: Flags.string(),
+        SUPABASE_SERVICE_ROLE_KEY: Flags.string(),
+
         // Langsmith tracing
         LANGCHAIN_TRACING_V2: Flags.string(),
         LANGCHAIN_ENDPOINT: Flags.string(),

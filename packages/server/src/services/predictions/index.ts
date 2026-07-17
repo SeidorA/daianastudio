@@ -4,12 +4,14 @@ import { utilBuildChatflow } from '../../utils/buildChatflow'
 import { ChatType } from '../../Interface'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { getErrorMessage } from '../../errors/utils'
+import { SharedMessageQuotaError } from '../../utils/sharedMessageQuota'
 
 const buildChatflow = async (req: Request, chatType?: ChatType) => {
     try {
         const dbResponse = await utilBuildChatflow(req, false, chatType)
         return dbResponse
     } catch (error) {
+        if (error instanceof SharedMessageQuotaError) throw error
         throw new InternalFlowiseError(
             StatusCodes.INTERNAL_SERVER_ERROR,
             `Error: predictionsServices.buildChatflow - ${getErrorMessage(error)}`
