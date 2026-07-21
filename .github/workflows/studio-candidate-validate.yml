@@ -1,0 +1,86 @@
+name: Validate Studio candidate change
+
+on:
+    pull_request_target:
+        branches:
+            - ci/studio-candidate-publish
+
+permissions:
+    contents: read
+    pull-requests: read
+
+jobs:
+    validate:
+        name: Studio candidate validation
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Validate changed paths and source from the API
+              shell: bash
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+                  HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+                  PR_NUMBER: ${{ github.event.pull_request.number }}
+                  REPOSITORY: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  control_file=.github/studio-candidate/source.sha
+                  if [[ "$HEAD_REPOSITORY" != "$REPOSITORY" ]]; then
+                      echo "Candidate changes must come from the base repository" >&2
+                      exit 1
+                  fi
+
+                  files_json="$RUNNER_TEMP/changed-files.json"
+                  gh api --paginate \
+                      "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > "$files_json"
+                  changed_paths=()
+                  while IFS= read -r -d '' path; do
+                      changed_paths+=("$path")
+                  done < <(jq -j '.[] | [.filename, .previous_filename // empty][] |
+                      select(length > 0) | ., "\u0000"' "$files_json")
+                  if (( ${#changed_paths[@]} == 0 )); then
+                      echo "The pull request has no changed paths" >&2
+                      exit 1
+                  fi
+
+                  has_control=false
+                  for path in "${changed_paths[@]}"; do
+                      if [[ "$path" == "$control_file" ]]; then
+                          has_control=true
+                      elif [[ "$path" != .github/workflows/* && "$path" != docs/* ]]; then
+                          echo "Maintenance changes are limited to workflows and docs: $path" >&2
+                          exit 1
+                      fi
+                  done
+                  if [[ "$has_control" == false ]]; then
+                      exit 0
+                  fi
+                  if (( ${#changed_paths[@]} != 1 )); then
+                      echo "The source control must be the only changed path" >&2
+                      exit 1
+                  fi
+                  source_file="$RUNNER_TEMP/source.sha"
+                  gh api -H 'Accept: application/vnd.github.raw+json' \
+                      "repos/$REPOSITORY/contents/$control_file?ref=$HEAD_SHA" > "$source_file"
+                  IFS= read -r source_sha < "$source_file" || {
+                      echo "The source control must end with one newline" >&2
+                      exit 1
+                  }
+                  if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]] ||
+                      ! cmp -s "$source_file" <(printf '%s\n' "$source_sha"); then
+                      echo "The source control must be exactly one lowercase 40-hex SHA and newline" >&2
+                      exit 1
+                  fi
+
+                  target_sha=$(gh api \
+                      "repos/$REPOSITORY/commits/feat%2Fdaiana-313" --jq .sha)
+                  compare_status=$(gh api \
+                      "repos/$REPOSITORY/compare/$source_sha...$target_sha" --jq .status) || {
+                      echo "The source SHA must be an existing ancestor of origin/feat/daiana-313" >&2
+                      exit 1
+                  }
+                  if [[ "$compare_status" != ahead && "$compare_status" != identical ]]; then
+                      echo "The source SHA must be an existing ancestor of origin/feat/daiana-313" >&2
+                      exit 1
+                  fi

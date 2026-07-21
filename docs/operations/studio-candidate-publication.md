@@ -4,9 +4,9 @@ Studio candidate publication lives only on `ci/studio-candidate-publish`. A revi
 
 ## Bootstrap safety
 
-The setup PR adds this guide and `.github/workflows/studio-candidate-publish.yml`, but it does **not** add `.github/studio-candidate/source.sha`.
+The setup PR adds this guide, `.github/workflows/studio-candidate-publish.yml`, and `.github/workflows/studio-candidate-validate.yml`, but it does **not** add `.github/studio-candidate/source.sha`.
 
-The workflow listens only for a push to `ci/studio-candidate-publish` that changes that exact control path. Merging the setup PR changes only the workflow and this guide, so bootstrap cannot trigger a build or publication.
+The publisher listens only for a push to `ci/studio-candidate-publish` that changes that exact control path. The `pull_request_target` validator runs base-branch-trusted logic, reads proposed paths and control bytes only through the GitHub API, and never checks out or executes PR content. Merging the three bootstrap files therefore cannot trigger publication.
 
 ## Publish a candidate
 
@@ -58,14 +58,16 @@ To retire the control plane, merge a separately reviewed PR that removes the wor
 
 ## Required branch protection
 
-`ci/studio-candidate-publish` is a publication boundary and must be protected before the first control-file PR merges. Configure repository rules to:
+`ci/studio-candidate-publish` is a publication boundary. Stage 1 protects bootstrap while the validation workflow is not yet present on the base branch:
 
--   Require pull requests and at least one approval from a maintainer other than the author.
+-   Require pull requests with zero approvals only for bootstrap.
+-   Dismiss stale reviews, require conversation resolution, and enforce the rules for administrators.
+-   Disallow direct and force pushes and branch deletion.
+-   Do not require a status check that does not yet exist on the base branch.
+
+Immediately after the setup PR merges, move to stage 2:
+
+-   Require the stable `Studio candidate validation` check and one approval from a maintainer other than the author.
 -   Dismiss stale approvals and require approval after the latest push.
--   Require conversation resolution and all applicable PR checks.
--   Restrict direct pushes to the dedicated branch and disallow force pushes and deletion.
--   Apply the rules to administrators and any automation identity that does not need to merge reviewed publication PRs.
-
-The repository currently has no protection or ruleset covering this branch. Its existing `Node CI` and `Test Docker Build` pull-request filters also use `'*'`, which does not match a slash-containing base branch. Before requiring those checks, explicitly include `ci/studio-candidate-publish` in their non-publishing PR triggers and confirm the check names on a test PR.
-
-Until protection and substantive PR checks are configured, maintainers must treat publication as blocked even though the workflow exists.
+-   Keep conversation resolution and administrator enforcement enabled.
+-   Keep direct pushes, force pushes, and branch deletion disabled.
