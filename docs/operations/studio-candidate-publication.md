@@ -66,4 +66,6 @@ To retire the control plane, merge a separately reviewed PR that removes the wor
 -   Restrict direct pushes to the dedicated branch and disallow force pushes and deletion.
 -   Apply the rules to administrators and any automation identity that does not need to merge reviewed publication PRs.
 
-The repository currently has no protection or ruleset covering this branch. Until protection is configured, maintainers must treat publication as blocked even though the workflow exists.
+The repository currently has no protection or ruleset covering this branch. Its existing `Node CI` and `Test Docker Build` pull-request filters also use `'*'`, which does not match a slash-containing base branch. Before requiring those checks, explicitly include `ci/studio-candidate-publish` in their non-publishing PR triggers and confirm the check names on a test PR.
+
+Until protection and substantive PR checks are configured, maintainers must treat publication as blocked even though the workflow exists.
