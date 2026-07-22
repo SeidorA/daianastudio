@@ -1,0 +1,205 @@
+name: Publish Studio candidate image
+
+on:
+    push:
+        branches:
+            - ci/studio-candidate-publish
+        paths:
+            - .github/studio-candidate/source.sha
+
+permissions:
+    contents: read
+
+concurrency:
+    group: studio-candidate-publish
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        name: Build, publish, and verify candidate
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        outputs:
+            digest: ${{ steps.verify.outputs.digest }}
+            image: ${{ steps.verify.outputs.image }}
+            source-sha: ${{ steps.source.outputs.sha }}
+        steps:
+            - name: Check out publication controls
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  ref: ${{ github.sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+
+            - name: Read and validate exact source
+              id: source
+              shell: bash
+              env:
+                  CONTROL_FILE: .github/studio-candidate/source.sha
+                  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+              run: |
+                  set -euo pipefail
+
+                  if [[ ! -f "$CONTROL_FILE" || -L "$CONTROL_FILE" ]]; then
+                      echo "The Studio candidate control must be a regular file" >&2
+                      exit 1
+                  fi
+
+                  IFS= read -r source_sha < "$CONTROL_FILE" || {
+                      echo "The Studio candidate control must end with one newline" >&2
+                      exit 1
+                  }
+                  if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                      echo "The Studio candidate control must contain one lowercase 40-hex SHA" >&2
+                      exit 1
+                  fi
+                  if ! cmp -s "$CONTROL_FILE" <(printf '%s\n' "$source_sha"); then
+                      echo "The Studio candidate control contains non-canonical bytes" >&2
+                      exit 1
+                  fi
+                  if [[ -z "$DOCKERHUB_USERNAME" ]]; then
+                      echo "DOCKERHUB_USERNAME is unavailable" >&2
+                      exit 1
+                  fi
+
+                  git fetch --no-tags --force origin \
+                      '+refs/heads/feat/daiana-313:refs/remotes/origin/feat/daiana-313'
+                  if ! git cat-file -e "${source_sha}^{commit}" 2>/dev/null; then
+                      echo "The controlled SHA does not identify a fetched commit" >&2
+                      exit 1
+                  fi
+
+                  resolved_sha=$(git rev-parse "${source_sha}^{commit}")
+                  designated_sha=$(git rev-parse origin/feat/daiana-313)
+                  if [[ "$resolved_sha" != "$source_sha" ]]; then
+                      echo "The controlled SHA did not resolve exactly" >&2
+                      exit 1
+                  fi
+                  if ! git merge-base --is-ancestor "$resolved_sha" "$designated_sha"; then
+                      echo "The controlled SHA is not an ancestor of origin/feat/daiana-313" >&2
+                      exit 1
+                  fi
+
+                  git checkout --detach "$resolved_sha"
+                  git reset --hard "$resolved_sha"
+                  git clean -ffdx
+
+                  required_paths=(
+                      Dockerfile
+                      .dockerignore
+                      package.json
+                      pnpm-lock.yaml
+                      pnpm-workspace.yaml
+                      packages
+                  )
+                  for path in "${required_paths[@]}"; do
+                      if [[ ! -e "$path" ]]; then
+                          echo "Required root build context path is missing: $path" >&2
+                          exit 1
+                      fi
+                  done
+                  if [[ "$(git rev-parse HEAD)" != "$resolved_sha" ]]; then
+                      echo "The build checkout does not match the controlled SHA" >&2
+                      exit 1
+                  fi
+                  if [[ -n "$(git status --porcelain)" ]]; then
+                      echo "The build checkout is not clean" >&2
+                      exit 1
+                  fi
+
+                  tag="candidate-${resolved_sha}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+                  {
+                      echo "sha=$resolved_sha"
+                      echo "tag=$tag"
+                      echo "image=${DOCKERHUB_USERNAME}/daianastudio"
+                  } >> "$GITHUB_OUTPUT"
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+            - name: Log in to Docker Hub
+              uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+              with:
+                  username: ${{ secrets.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+            - name: Build and publish multi-platform image
+              id: build
+              uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+              with:
+                  context: .
+                  file: Dockerfile
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ steps.source.outputs.image }}:${{ steps.source.outputs.tag }}
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/SeidorA/daianastudio
+                      org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+                      org.opencontainers.image.version=${{ steps.source.outputs.tag }}
+                  annotations: |
+                      index:org.opencontainers.image.source=https://github.com/SeidorA/daianastudio
+                      index:org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+                      index:org.opencontainers.image.version=${{ steps.source.outputs.tag }}
+                  provenance: mode=max
+                  sbom: true
+
+            - name: Verify digest, platforms, and annotations
+              id: verify
+              shell: bash
+              env:
+                  DIGEST: ${{ steps.build.outputs.digest }}
+                  IMAGE: ${{ steps.source.outputs.image }}
+                  SOURCE_SHA: ${{ steps.source.outputs.sha }}
+                  TAG: ${{ steps.source.outputs.tag }}
+              run: |
+                  set -euo pipefail
+
+                  if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                      echo "The build did not return a valid OCI index digest" >&2
+                      exit 1
+                  fi
+
+                  manifest_file="${RUNNER_TEMP}/studio-candidate-index.json"
+                  docker buildx imagetools inspect "${IMAGE}@${DIGEST}" --raw > "$manifest_file"
+                  actual_digest="sha256:$(sha256sum "$manifest_file" | cut -d ' ' -f 1)"
+                  if [[ "$actual_digest" != "$DIGEST" ]]; then
+                      echo "Registry content does not match the build digest" >&2
+                      exit 1
+                  fi
+
+                  jq -e \
+                      --arg source "https://github.com/SeidorA/daianastudio" \
+                      --arg revision "$SOURCE_SHA" \
+                      --arg version "$TAG" \
+                      '.annotations["org.opencontainers.image.source"] == $source and
+                       .annotations["org.opencontainers.image.revision"] == $revision and
+                       .annotations["org.opencontainers.image.version"] == $version' \
+                      "$manifest_file" > /dev/null
+
+                  platforms=$(jq -r \
+                      '[.manifests[]
+                        | select(.platform.os != "unknown")
+                        | "\(.platform.os)/\(.platform.architecture)"]
+                       | sort
+                       | join(",")' \
+                      "$manifest_file")
+                  if [[ "$platforms" != "linux/amd64,linux/arm64" ]]; then
+                      echo "Published platforms do not match linux/amd64 and linux/arm64: $platforms" >&2
+                      exit 1
+                  fi
+
+                  digest_reference="${IMAGE}@${DIGEST}"
+                  echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+                  echo "image=$digest_reference" >> "$GITHUB_OUTPUT"
+                  {
+                      echo "### Published Studio candidate"
+                      echo
+                      echo "- Digest authority: \`${digest_reference}\`"
+                      echo "- Convenience tag: \`${IMAGE}:${TAG}\`"
+                      echo "- Source: \`${SOURCE_SHA}\`"
+                      echo "- Platforms: \`linux/amd64\`, \`linux/arm64\`"
+                      echo "- Attestations: provenance \`mode=max\`, SBOM enabled"
+                  } >> "$GITHUB_STEP_SUMMARY"
