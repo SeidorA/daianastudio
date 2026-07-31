@@ -6,9 +6,9 @@ import predictionsServices from '../../services/predictions'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
 import { StatusCodes } from 'http-status-codes'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
-import { v4 as uuidv4 } from 'uuid'
 import { getErrorMessage } from '../../errors/utils'
 import { MODE } from '../../Interface'
+import { resolvePredictionSessionId } from './sessionIdentifier'
 
 // Send input message and get prediction result (External)
 const createPrediction = async (req: Request, res: Response, next: NextFunction) => {
@@ -59,11 +59,8 @@ const createPrediction = async (req: Request, res: Response, next: NextFunction)
             if (streamable?.isStreaming && isStreamingRequested) {
                 const sseStreamer = getRunningExpressApp().sseStreamer
 
-                let chatId = req.body.chatId
-                if (!req.body.chatId) {
-                    chatId = req.body.chatId ?? req.body.overrideConfig?.sessionId ?? uuidv4()
-                    req.body.chatId = chatId
-                }
+                const chatId = resolvePredictionSessionId(req.body)
+                req.body.chatId = chatId
                 const isQueueMode = process.env.MODE === MODE.QUEUE
                 try {
                     sseStreamer.addExternalClient(chatId, res)
@@ -78,7 +75,7 @@ const createPrediction = async (req: Request, res: Response, next: NextFunction)
                     }
 
                     const apiResponse = await predictionsServices.buildChatflow(req)
-                    sseStreamer.streamMetadataEvent(apiResponse.chatId, apiResponse)
+                    sseStreamer.streamMetadataEvent(chatId, apiResponse)
                 } catch (error) {
                     if (chatId) {
                         sseStreamer.streamErrorEvent(chatId, getErrorMessage(error))
