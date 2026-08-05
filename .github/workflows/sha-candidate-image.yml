@@ -1,0 +1,133 @@
+name: Publish Studio SHA Candidate Image
+
+env:
+    FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+    IMAGE_NAME: cloudseidoranalytics/daianastudio
+
+on:
+    workflow_dispatch:
+        inputs:
+            source_sha:
+                description: 'Exact 40-character commit SHA from develop'
+                required: true
+                type: string
+
+permissions:
+    contents: read
+
+concurrency:
+    group: sha-candidate-${{ inputs.source_sha }}
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        outputs:
+            digest: ${{ steps.verify.outputs.digest }}
+            reference: ${{ steps.verify.outputs.reference }}
+        steps:
+            - name: Checkout candidate source
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+
+            - name: Resolve and validate source SHA
+              id: source
+              env:
+                  INPUT_SHA: ${{ inputs.source_sha }}
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  [[ "$INPUT_SHA" =~ ^[A-Fa-f0-9]{40}$ ]] || { echo "Source SHA must contain exactly 40 hexadecimal characters"; exit 1; }
+                  source_sha="$(printf '%s' "$INPUT_SHA" | tr '[:upper:]' '[:lower:]')"
+                  git fetch --no-tags --force origin '+refs/heads/develop:refs/remotes/origin/develop'
+                  git cat-file -e "$source_sha^{commit}" 2>/dev/null || { echo "Source SHA is not a commit in this repository"; exit 1; }
+                  resolved_sha="$(git rev-parse "$source_sha^{commit}")"
+                  [[ "$resolved_sha" == "$source_sha" ]] || { echo "Source SHA did not resolve exactly"; exit 1; }
+                  git merge-base --is-ancestor "$resolved_sha" origin/develop || { echo "Source SHA is not an ancestor of origin/develop"; exit 1; }
+                  echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
+                  echo "tag=sha-$resolved_sha" >> "$GITHUB_OUTPUT"
+
+            - name: Checkout exact candidate source
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ steps.source.outputs.sha }}
+                  fetch-depth: 1
+                  persist-credentials: false
+
+            - name: Login to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+            - name: Reject an existing candidate tag
+              env:
+                  IMAGE: ${{ env.IMAGE_NAME }}
+                  TAG: ${{ steps.source.outputs.tag }}
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  inspect_output=""
+                  if inspect_output="$(docker buildx imagetools inspect "$IMAGE:$TAG" 2>&1)"; then
+                    echo "Candidate tag already exists; refusing to overwrite it: $IMAGE:$TAG"
+                    exit 1
+                  elif ! printf '%s' "$inspect_output" | grep -Eiq 'not found|no such manifest|manifest unknown|404'; then
+                    echo "Unable to prove candidate tag is unused: $IMAGE:$TAG"
+                    printf '%s\n' "$inspect_output"
+                    exit 1
+                  fi
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Build and publish multi-arch candidate
+              id: build
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  file: ./Dockerfile
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: ${{ env.IMAGE_NAME }}:${{ steps.source.outputs.tag }}
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                      org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+                      org.opencontainers.image.version=${{ steps.source.outputs.tag }}
+                  annotations: |
+                      index:org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                      index:org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+                      index:org.opencontainers.image.version=${{ steps.source.outputs.tag }}
+                  provenance: mode=max
+                  sbom: true
+
+            - name: Verify and report index digest
+              id: verify
+              env:
+                  IMAGE: ${{ env.IMAGE_NAME }}
+                  TAG: ${{ steps.source.outputs.tag }}
+                  SOURCE_SHA: ${{ steps.source.outputs.sha }}
+                  DIGEST: ${{ steps.build.outputs.digest }}
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Build returned an invalid OCI index digest"; exit 1; }
+                  raw="$RUNNER_TEMP/candidate-index.json"
+                  docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw > "$raw"
+                  [[ "sha256:$(sha256sum "$raw" | cut -d ' ' -f 1)" == "$DIGEST" ]] || { echo "Registry content does not match the build digest"; exit 1; }
+                  jq -e --arg source "https://github.com/$GITHUB_REPOSITORY" --arg revision "$SOURCE_SHA" --arg version "$TAG" \
+                    '.annotations["org.opencontainers.image.source"] == $source and .annotations["org.opencontainers.image.revision"] == $revision and .annotations["org.opencontainers.image.version"] == $version and
+                     (any(.manifests[].platform; .os == "linux" and .architecture == "amd64")) and (any(.manifests[].platform; .os == "linux" and .architecture == "arm64"))' "$raw" >/dev/null
+                  reference="$IMAGE@$DIGEST"
+                  echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+                  echo "reference=$reference" >> "$GITHUB_OUTPUT"
+                  {
+                    echo "## Studio candidate image"
+                    echo
+                    echo "- Source commit: \\`$SOURCE_SHA\\`"
+                    echo "- Digest-authoritative reference: \\`$reference\\`"
+                    echo "- Convenience tag: \\`$IMAGE:$TAG\\`"
+                    echo "- Platforms: \\`linux/amd64\\`, \\`linux/arm64\\`"
+                  } >> "$GITHUB_STEP_SUMMARY"
