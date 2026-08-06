@@ -110,7 +110,7 @@ jobs:
                   fi
                   inspect_output=""
                   if inspect_output="$(docker buildx imagetools inspect "$IMAGE:$TAG" 2>&1)"; then
-                    old_digest="$(printf '%s\n' "$inspect_output" | grep -m1 '^Digest:' | cut -d ' ' -f2)"
+                    old_digest="$(printf '%s\n' "$inspect_output" | awk '/^Digest:/ { print $2; exit }')"
                     [[ "$old_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Unable to capture the existing stable image digest"; exit 1; }
                     if [[ "$REPAIR" != 'true' ]]; then
                       echo "Stable tag already exists; refusing to overwrite it: $IMAGE:$TAG"
