@@ -79,9 +79,32 @@ describe('runWithSharedMessageQuota', () => {
         await expect(runWithSharedMessageQuota(defaultParams, jest.fn())).rejects.toMatchObject({ statusCode: 503 })
     })
 
+    it('reserves and consumes quota for private external Studio traffic', async () => {
+        const execute = jest.fn().mockResolvedValue({ chatMessageId: 'message-1', text: 'Hello' })
+        ;(global.fetch as jest.Mock)
+            .mockImplementationOnce(() => rpcResponse(42))
+            .mockImplementationOnce(() => rpcResponse({ allowed: true, status: 'reserved' }))
+            .mockImplementationOnce(() => rpcResponse({ status: 'consumed' }))
+
+        await expect(
+            runWithSharedMessageQuota({ ...defaultParams, chatflow: { ...chatflow, isPublic: false } }, execute)
+        ).resolves.toMatchObject({ chatMessageId: 'message-1' })
+
+        expect(execute).toHaveBeenCalledTimes(1)
+        expect(global.fetch).toHaveBeenNthCalledWith(
+            2,
+            'https://example.supabase.co/rest/v1/rpc/reserve_tenant_message_quota',
+            expect.objectContaining({ body: expect.stringMatching(/request-1.*studio-shared-chat/) })
+        )
+        expect(global.fetch).toHaveBeenNthCalledWith(
+            3,
+            'https://example.supabase.co/rest/v1/rpc/consume_tenant_message_quota',
+            expect.any(Object)
+        )
+    })
+
     it.each([
         ['internal', { isInternal: true }],
-        ['non-public', { chatflow: { ...chatflow, isPublic: false } }],
         ['evaluation', { isEvaluation: true }],
         ['tool', { isTool: true }],
         ['MCP', { chatType: 'MCP' as ChatType }],
