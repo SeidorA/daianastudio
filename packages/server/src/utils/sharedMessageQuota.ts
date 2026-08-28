@@ -33,8 +33,8 @@ export class SharedMessageQuotaError extends InternalFlowiseError {}
 
 const isQuotaEnabled = () => process.env.DAIANA_SHARED_CHAT_QUOTA_ENABLED === 'true'
 
-const isEligibleSharedChat = ({ chatflow, isInternal, isEvaluation, isTool, chatType }: SharedMessageQuotaParams) =>
-    chatflow.isPublic === true && !isInternal && !isEvaluation && !isTool && (chatType === undefined || chatType === 'EXTERNAL')
+const isEligibleSharedChat = ({ isInternal, isEvaluation, isTool, chatType }: SharedMessageQuotaParams) =>
+    !isInternal && !isEvaluation && !isTool && (chatType === undefined || chatType === 'EXTERNAL')
 
 const getRequestId = (requestId: unknown): string => {
     if (requestId === undefined || requestId === null || requestId === '') return uuidv4()

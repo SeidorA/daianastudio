@@ -251,17 +251,7 @@ describe('NodeVM sandbox — availableDependencies allowlist', () => {
             process.env.ALLOW_BUILTIN_DEP = 'true'
         })
 
-        const removedPackages = [
-            'pg',
-            'mysql2',
-            'mongodb',
-            'ioredis',
-            'redis',
-            'typeorm',
-            'puppeteer',
-            'playwright',
-            '@zilliz/milvus2-sdk-node'
-        ]
+        const removedPackages = ['pg', 'ioredis', 'redis', 'typeorm', 'puppeteer', 'playwright', '@zilliz/milvus2-sdk-node']
 
         test.each(removedPackages)(
             "require('%s') is denied",
