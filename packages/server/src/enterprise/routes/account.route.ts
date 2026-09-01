@@ -2,9 +2,12 @@ import express from 'express'
 import { IdentityManager } from '../../IdentityManager'
 import { AccountController } from '../controllers/account.controller'
 import { checkAnyPermission } from '../rbac/PermissionCheck'
+import { authenticateDaianaProvisioning } from '../auth/studioProvisioning.middleware'
 
 const router = express.Router()
 const accountController = new AccountController()
+
+router.post('/provision', authenticateDaianaProvisioning, accountController.provision)
 
 router.post('/register', accountController.register)
 
@@ -33,3 +36,5 @@ router.post('/billing', accountController.createStripeCustomerPortalSession)
 router.delete('/delete', accountController.delete)
 
 export default router
+
+export { authenticateDaianaProvisioning }
