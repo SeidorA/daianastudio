@@ -54,7 +54,7 @@ import {
 } from '../utils/sendEmail'
 import { generateTempToken } from '../utils/tempTokenUtils'
 import { getSecureAppUrl, getSecureTokenLink } from '../utils/url.util'
-import { validatePasswordOrThrow } from '../utils/validation.util'
+import { isInvalidUUID, validatePasswordOrThrow } from '../utils/validation.util'
 import auditService from './audit'
 import { OrganizationUserErrorMessage, OrganizationUserService } from './organization-user.service'
 import { OrganizationErrorMessage, OrganizationService } from './organization.service'
@@ -73,6 +73,19 @@ export type AccountDTO = {
     workspace: Partial<Workspace>
     workspaceUser: Partial<WorkspaceUser>
     role: Partial<Role>
+}
+
+export type StudioProvisioningDTO = {
+    externalUserId: string
+    tenantId: number
+    email: string
+    name: string
+}
+
+const STUDIO_PROVISIONING_MAX_ATTEMPTS = 3
+
+function isUniqueConstraintError(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505'
 }
 
 export class AccountService {
@@ -344,6 +357,126 @@ export class AccountService {
 
     public async register(data: AccountDTO) {
         return await this.saveRegisterAccount(data)
+    }
+
+    /** Creates the Daiana-owned Studio account graph without requiring shared database credentials. */
+    public async provisionStudioAccount(data: StudioProvisioningDTO) {
+        if (!data || isInvalidUUID(data.externalUserId) || !data.email || !Number.isSafeInteger(data.tenantId) || data.tenantId < 1) {
+            throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, 'Invalid Studio provisioning request')
+        }
+
+        for (let attempt = 1; attempt <= STUDIO_PROVISIONING_MAX_ATTEMPTS; attempt++) {
+            const queryRunner = this.dataSource.createQueryRunner()
+            await queryRunner.connect()
+            try {
+                await queryRunner.startTransaction()
+
+                let user = await queryRunner.manager.findOne(User, {
+                    where: { id: data.externalUserId },
+                    lock: { mode: 'pessimistic_write' }
+                })
+                if (!user) {
+                    const userWithEmail = await this.userService.readUserByEmail(data.email, queryRunner)
+                    if (userWithEmail) throw new InternalFlowiseError(StatusCodes.CONFLICT, UserErrorMessage.USER_EMAIL_ALREADY_EXISTS)
+                    user = queryRunner.manager.create(User, {
+                        id: data.externalUserId,
+                        name: data.name || data.email,
+                        email: data.email,
+                        status: UserStatus.ACTIVE,
+                        createdBy: data.externalUserId,
+                        updatedBy: data.externalUserId
+                    })
+                    user = await this.userService.saveUser(user, queryRunner)
+                }
+
+                const ownerRole = await this.roleService.readGeneralRoleByName(GeneralRole.OWNER, queryRunner)
+                if (!ownerRole) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, RoleErrorMessage.ROLE_NOT_FOUND)
+
+                let organization = await queryRunner.manager.findOneBy(Organization, {
+                    createdBy: user.id,
+                    name: OrganizationName.DEFAULT_ORGANIZATION
+                })
+                if (!organization) {
+                    organization = await this.organizationservice.saveOrganization(
+                        this.organizationservice.createNewOrganization(
+                            {
+                                name: OrganizationName.DEFAULT_ORGANIZATION,
+                                createdBy: user.id
+                            },
+                            queryRunner,
+                            true
+                        ),
+                        queryRunner
+                    )
+                }
+
+                let organizationUser = await queryRunner.manager.findOneBy(OrganizationUser, {
+                    organizationId: organization.id,
+                    userId: user.id
+                })
+                if (!organizationUser) {
+                    organizationUser = await this.organizationUserService.saveOrganizationUser(
+                        this.organizationUserService.createNewOrganizationUser(
+                            {
+                                organizationId: organization.id,
+                                userId: user.id,
+                                roleId: ownerRole.id,
+                                status: OrganizationUserStatus.ACTIVE,
+                                createdBy: user.id
+                            },
+                            queryRunner
+                        ),
+                        queryRunner
+                    )
+                }
+
+                let workspace = await queryRunner.manager.findOneBy(Workspace, {
+                    organizationId: organization.id,
+                    name: WorkspaceName.DEFAULT_WORKSPACE
+                })
+                if (!workspace) {
+                    workspace = await this.workspaceService.saveWorkspace(
+                        this.workspaceService.createNewWorkspace(
+                            {
+                                organizationId: organization.id,
+                                name: WorkspaceName.DEFAULT_WORKSPACE,
+                                createdBy: user.id
+                            },
+                            queryRunner,
+                            true
+                        ),
+                        queryRunner
+                    )
+                }
+
+                let workspaceUser = await queryRunner.manager.findOneBy(WorkspaceUser, { workspaceId: workspace.id, userId: user.id })
+                if (!workspaceUser) {
+                    workspaceUser = await this.workspaceUserService.saveWorkspaceUser(
+                        this.workspaceUserService.createNewWorkspaceUser(
+                            {
+                                workspaceId: workspace.id,
+                                userId: user.id,
+                                roleId: ownerRole.id,
+                                status: WorkspaceUserStatus.ACTIVE,
+                                createdBy: user.id
+                            },
+                            queryRunner
+                        ),
+                        queryRunner
+                    )
+                }
+
+                await queryRunner.commitTransaction()
+                return { organizationId: organization.id, workspaceId: workspace.id, userId: user.id, tenantId: data.tenantId }
+            } catch (error) {
+                if (queryRunner.isTransactionActive) await queryRunner.rollbackTransaction()
+                if (!isUniqueConstraintError(error) || attempt === STUDIO_PROVISIONING_MAX_ATTEMPTS) throw error
+            } finally {
+                if (!queryRunner.isReleased) await queryRunner.release()
+            }
+        }
+
+        throw new InternalFlowiseError(StatusCodes.SERVICE_UNAVAILABLE, 'Studio provisioning could not be completed')
     }
 
     private async saveInviteAccount(data: AccountDTO, currentUser?: Express.User) {

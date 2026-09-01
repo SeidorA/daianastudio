@@ -31,6 +31,7 @@ export const WHITELIST_URLS = [
     '/api/v1/account/logout',
     '/api/v1/account/verify',
     '/api/v1/account/register',
+    '/api/v1/account/provision',
     '/api/v1/account/resend-verification',
     '/api/v1/account/forgot-password',
     '/api/v1/account/reset-password',
