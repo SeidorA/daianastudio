@@ -1,6 +1,6 @@
 import { StatusCodes } from 'http-status-codes'
 import { WHITELIST_URLS } from '../../utils/constants'
-import { authenticateDaianaProvisioning } from './account.route'
+import { authenticateDaianaProvisioning } from '../auth/studioProvisioning.middleware'
 
 const PROVISIONING_PATH = '/api/v1/account/provision'
 const PROVISIONING_SECRET = 'test-provisioning-secret'
@@ -30,6 +30,18 @@ describe('Daiana Studio provisioning route protection', () => {
         authenticateDaianaProvisioning(req, res, next)
 
         expect(res.sendStatus).toHaveBeenCalledWith(StatusCodes.UNAUTHORIZED)
+        expect(next).not.toHaveBeenCalled()
+    })
+
+    it('returns 503 when the provisioning secret is not configured', () => {
+        delete process.env.DAIANA_STUDIO_PROVISIONING_SECRET
+        const req = { get: jest.fn().mockReturnValue(`Bearer ${PROVISIONING_SECRET}`) } as any
+        const res = makeResponse()
+        const next = jest.fn()
+
+        authenticateDaianaProvisioning(req, res, next)
+
+        expect(res.sendStatus).toHaveBeenCalledWith(StatusCodes.SERVICE_UNAVAILABLE)
         expect(next).not.toHaveBeenCalled()
     })
 

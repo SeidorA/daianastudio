@@ -1,6 +1,6 @@
 import { StatusCodes } from 'http-status-codes'
 import { InternalFlowiseError } from '../../errors/internalFlowiseError'
-import { validateStudioProvisioningRequest } from './account.controller'
+import { validateStudioProvisioningRequest } from '../validation/studioProvisioning.validation'
 
 const validRequest = {
     externalUserId: '123e4567-e89b-12d3-a456-426614174000',
