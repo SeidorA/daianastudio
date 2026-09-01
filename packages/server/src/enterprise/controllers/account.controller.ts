@@ -8,8 +8,21 @@ import { emitEvent, TelemetryEventCategory, TelemetryEventResult } from '../../u
 import { Organization } from '../database/entities/organization.entity'
 import { User } from '../database/entities/user.entity'
 import { AccountDTO, AccountService } from '../services/account.service'
+import { validateStudioProvisioningRequest } from '../validation/studioProvisioning.validation'
+
+export { validateStudioProvisioningRequest } from '../validation/studioProvisioning.validation'
 
 export class AccountController {
+    public async provision(req: Request, res: Response, next: NextFunction) {
+        try {
+            const request = validateStudioProvisioningRequest(req.body)
+            const data = await new AccountService().provisionStudioAccount(request)
+            return res.status(StatusCodes.OK).json(data)
+        } catch (error) {
+            next(error)
+        }
+    }
+
     public async register(req: Request, res: Response, next: NextFunction) {
         try {
             const accountService = new AccountService()
